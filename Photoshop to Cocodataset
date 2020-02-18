@@ -1,0 +1,101 @@
+#Photoshop to Panoptic Segmentation format
+
+from PIL import Image
+from tqdm import tqdm
+import matplotlib.pyplot as plt 
+import numpy as np
+import os, glob, re
+import cv2
+import skimage.io as io
+import math
+from scipy import ndimage
+from skimage.measure import regionprops, label
+
+root_dir = os.path.dirname(os.path.abspath('annot_file_preperation.ipynb'))
+annot_dir = os.path.join(root_dir,'annot')
+im_dir = glob.glob(os.path.join(root_dir, '*.jpg'))
+root_dir
+
+# This section import annotation files without changing the shape of annotated mask 
+
+for img in range(np.size(im_dir)):    
+    img_name = os.path.splitext(os.path.basename(im_dir[img]))[0]
+    # b = glob.glob(a)
+    annot_name = glob.glob(os.path.join(annot_dir,img_name+'*.jpg'))
+    
+    for i in  range(np.size(annot_name)):
+        
+        annot_part = Image.open(annot_name[i])
+        annot_img_ = np.zeros(np.asarray(annot_part).shape[:2], dtype='uint8')
+        annot_part = np.array(annot_part)
+        annot_img_[np.logical_and.reduce([annot_part[:, :, 0] > 200,
+                                          annot_part[:, :, 1] < 80,
+                                          annot_part[:, :, 2] < 80])] = 255
+        
+        
+        labels, num = label(annot_img_,connectivity=2, return_num= True)
+
+        for R in regionprops(labels):
+            r_min, c_min, r_max, c_max = R.bbox[0], R.bbox[1], R.bbox[2], R.bbox[3]
+            r_length, c_length = r_max - r_min , c_max - c_min 
+            
+            if np.max([r_length, c_length]) > 256:
+                if r_length > c_length : 
+                    num_seg = int(np.floor(r_length/256)) + 1
+                    w_width = int(np.floor(r_length/num_seg))
+                    stepSize = int(np.floor(w_width/2))-1
+                    n = 0 
+                    
+                    for y in range(r_min, r_max - w_width , stepSize):
+                        n = n + 1
+                        annot_coco_dir = os.path.join(root_dir,'annot_coco', img_name + '_crack_'
+                                                      + str(i) + '_' + str(n) + '.png')
+                        annot_seg = np.zeros(np.asarray(annot_part).shape[:2], dtype='uint8')
+                        annot_seg[y:y+w_width, c_min:c_max] = annot_img_[y:y+w_width, c_min:c_max]
+#                         annot_seg = cv2.dilate(annot_seg,kernel,iterations = 1) # 커져라
+                        Image.fromarray(annot_seg).save(annot_coco_dir)
+                else : 
+                    num_seg = int(np.floor(c_length/256)) + 1
+                    w_width = int(np.floor(c_length/num_seg))
+                    stepSize = int(np.floor(w_width/2))-1
+                    n = 0
+                    for x in range(c_min, c_max - w_width , stepSize):
+                        n = n + 1
+                        annot_coco_dir = os.path.join(root_dir,'annot_coco', img_name + '_crack_'
+                                                      + str(i) + '_' + str(n) + '.png')
+                        annot_seg = np.zeros(np.asarray(annot_part).shape[:2], dtype='uint8')
+                        annot_seg[r_min:r_max, x:x+w_width] = annot_img_[r_min:r_max, x:x+w_width]
+#                         annot_seg = cv2.dilate(annot_seg,kernel,iterations = 1) # 커져라
+                        Image.fromarray(annot_seg).save(annot_coco_dir)
+            else:
+                annot_coco_dir = os.path.join(root_dir,'annot_coco', img_name + '_crack_'
+                                                      + str(i) + '.png')
+#                 annot_img_ = cv2.dilate(annot_img_,kernel,iterations = 1) # 커져라
+                Image.fromarray(annot_img_).save(annot_coco_dir)
+        
+        
+# This section import annotation files without changing the shape of annotated mask 
+
+for img in range(np.size(im_dir)):    
+    img_name = os.path.splitext(os.path.basename(im_dir[img]))[0]
+    # b = glob.glob(a)
+    annot_name = glob.glob(os.path.join(annot_dir,img_name+'*.jpg'))
+    
+    for i in  range(np.size(annot_name)):
+        
+        annot_part = Image.open(annot_name[i])
+        annot_img_ = np.zeros(np.asarray(annot_part).shape[:2], dtype='uint8')
+        annot_part = np.array(annot_part)
+        annot_img_[np.logical_and.reduce([annot_part[:, :, 0] < 50,
+                                          annot_part[:, :, 1] < 50,
+                                          annot_part[:, :, 2] > 220])] = 255
+        
+        labels, num = label(annot_img_,connectivity=2, return_num= True)
+        
+        for R in regionprops(labels):
+            if R.area > 1:
+                annot_img_=ndimage.binary_fill_holes(annot_img_).astype('uint8')*255
+                annot_coco_dir = os.path.join(root_dir,'annot_coco', img_name + '_concrete_'
+                                              + str(i) + '.png')
+#                 annot_img_ = cv2.dilate(annot_img_,kernel,iterations = 1) # 커져라
+                Image.fromarray(annot_img_).save(annot_coco_dir)
